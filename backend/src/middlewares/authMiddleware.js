@@ -58,7 +58,8 @@ export const authMiddleware = async (req, res, next) => {
           apellido,
           telefono,
           rol,
-          activo
+          activo,
+          avatar_path
           `
         )
         .eq("id", user.id)
@@ -92,8 +93,10 @@ export const authMiddleware = async (req, res, next) => {
       apellido: profile.apellido,
       telefono: profile.telefono,
       rol: profile.rol,
-      activo: profile.activo
+      activo: profile.activo,
+      avatar_path: profile.avatar_path
     };
+    req.accessToken = token;
 
     return next();
   } catch (error) {

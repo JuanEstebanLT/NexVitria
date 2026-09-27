@@ -1,6 +1,11 @@
 import {
   registrarUsuario,
-  iniciarSesion
+  iniciarSesion,
+  cerrarSesion,
+  actualizarDatosPersonales,
+  crearUrlFirmadaAvatar,
+  eliminarAvatar,
+  guardarAvatar
 } from "../services/authService.js";
 
 // Validar formato básico de correo electrónico
@@ -15,6 +20,54 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const passwordRegex =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 
+const phoneCharactersRegex = /^\+?[\d\s().-]+$/;
+const MAX_NAME_LENGTH = 80;
+const MAX_PHONE_LENGTH = 32;
+
+const normalizarTelefono = (telefono) => {
+  if (telefono === undefined || telefono === null) {
+    return null;
+  }
+
+  if (typeof telefono !== "string") {
+    return undefined;
+  }
+
+  const telefonoNormalizado = telefono.trim();
+
+  if (!telefonoNormalizado) {
+    return null;
+  }
+
+  if (telefonoNormalizado.length > MAX_PHONE_LENGTH) {
+    return undefined;
+  }
+
+  const cantidadDigitos = telefonoNormalizado.replace(/\D/g, "").length;
+
+  if (
+    !phoneCharactersRegex.test(telefonoNormalizado) ||
+    cantidadDigitos < 7 ||
+    cantidadDigitos > 15
+  ) {
+    return undefined;
+  }
+
+  return telefonoNormalizado;
+};
+
+const normalizarNombre = (valor) => {
+  if (typeof valor !== "string") return undefined;
+
+  const valorNormalizado = valor.trim();
+
+  if (!valorNormalizado || valorNormalizado.length > MAX_NAME_LENGTH) {
+    return undefined;
+  }
+
+  return valorNormalizado;
+};
+
 // =====================================================
 // REGISTRO
 // =====================================================
@@ -25,8 +78,11 @@ export const registro = async (req, res, next) => {
       email,
       password,
       nombre,
-      apellido
+      apellido,
+      telefono
     } = req.body;
+
+    const telefonoNormalizado = normalizarTelefono(telefono);
 
     // Validar correo
     if (
@@ -77,11 +133,19 @@ export const registro = async (req, res, next) => {
       });
     }
 
+    if (telefonoNormalizado === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Debe ingresar un teléfono válido de entre 7 y 15 dígitos"
+      });
+    }
+
     const resultado = await registrarUsuario({
       email: email.trim().toLowerCase(),
       password,
       nombre: nombre.trim(),
-      apellido: apellido.trim()
+      apellido: apellido.trim(),
+      telefono: telefonoNormalizado
     });
 
     return res.status(201).json({
@@ -90,8 +154,10 @@ export const registro = async (req, res, next) => {
         ? "Usuario registrado correctamente"
         : "Usuario registrado. Revise su correo electrónico para confirmar la cuenta",
       data: {
-        user: resultado.user,
-        session: resultado.session
+        requires_email_confirmation: !resultado.session,
+        access_token: resultado.session?.access_token || null,
+        expires_at: resultado.session?.expires_at || null,
+        expires_in: resultado.session?.expires_in || null
       }
     });
   } catch (error) {
@@ -178,8 +244,9 @@ export const login = async (req, res, next) => {
       success: true,
       message: "Inicio de sesión realizado correctamente",
       data: {
-        user: resultado.user,
-        session: resultado.session
+        access_token: resultado.session.access_token,
+        expires_at: resultado.session.expires_at,
+        expires_in: resultado.session.expires_in
       }
     });
   } catch (error) {
@@ -205,6 +272,189 @@ export const login = async (req, res, next) => {
       });
     }
 
+    return next(error);
+  }
+};
+
+// =====================================================
+// USUARIO AUTENTICADO
+// =====================================================
+
+export const obtenerUsuarioActual = async (req, res, next) => {
+  try {
+    const {
+      id,
+      email,
+      nombre,
+      apellido,
+      telefono,
+      rol,
+      activo,
+      avatar_path
+    } = req.user;
+
+    const avatar_url = await crearUrlFirmadaAvatar(avatar_path);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id,
+        email,
+        nombre,
+        apellido,
+        telefono,
+        rol,
+        activo,
+        avatar_path,
+        avatar_url
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const actualizarUsuarioActual = async (req, res, next) => {
+  try {
+    const nombre = normalizarNombre(req.body?.nombre);
+    const apellido = normalizarNombre(req.body?.apellido);
+    const telefono = normalizarTelefono(req.body?.telefono);
+
+    if (nombre === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: `El nombre es obligatorio y no puede superar ${MAX_NAME_LENGTH} caracteres.`
+      });
+    }
+
+    if (apellido === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: `El apellido es obligatorio y no puede superar ${MAX_NAME_LENGTH} caracteres.`
+      });
+    }
+
+    if (telefono === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Debe ingresar un teléfono válido de entre 7 y 15 dígitos."
+      });
+    }
+
+    const profile = await actualizarDatosPersonales({
+      userId: req.user.id,
+      nombre,
+      apellido,
+      telefono
+    });
+    const avatar_url = await crearUrlFirmadaAvatar(profile.avatar_path);
+
+    return res.status(200).json({
+      success: true,
+      message: "Datos personales actualizados correctamente.",
+      data: {
+        id: profile.id,
+        email: req.user.email,
+        nombre: profile.nombre,
+        apellido: profile.apellido,
+        telefono: profile.telefono,
+        rol: profile.rol,
+        activo: profile.activo,
+        avatar_path: profile.avatar_path,
+        avatar_url
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const detectarTipoAvatar = (file) => {
+  if (!file?.buffer || file.buffer.length < 8) return null;
+
+  const esJpeg =
+    file.mimetype === "image/jpeg" &&
+    file.buffer[0] === 0xff &&
+    file.buffer[1] === 0xd8 &&
+    file.buffer[2] === 0xff;
+
+  const firmaPng = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const esPng =
+    file.mimetype === "image/png" &&
+    firmaPng.every((byte, index) => file.buffer[index] === byte);
+
+  if (esJpeg) return "image/jpeg";
+  if (esPng) return "image/png";
+  return null;
+};
+
+export const subirAvatar = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Debes seleccionar una imagen JPG, JPEG o PNG."
+      });
+    }
+
+    const contentType = detectarTipoAvatar(req.file);
+
+    if (!contentType) {
+      return res.status(400).json({
+        success: false,
+        message: "Solo puedes subir imágenes JPG, JPEG o PNG válidas."
+      });
+    }
+
+    const avatar = await guardarAvatar({
+      userId: req.user.id,
+      buffer: req.file.buffer,
+      contentType
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Foto de perfil actualizada correctamente.",
+      data: avatar
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const borrarAvatar = async (req, res, next) => {
+  try {
+    await eliminarAvatar({
+      userId: req.user.id,
+      avatarPath: req.user.avatar_path
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Foto de perfil eliminada correctamente.",
+      data: {
+        avatar_path: null,
+        avatar_url: null
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// =====================================================
+// CIERRE DE SESIÓN
+// =====================================================
+
+export const logout = async (req, res, next) => {
+  try {
+    await cerrarSesion(req.accessToken);
+
+    return res.status(200).json({
+      success: true,
+      message: "Sesión cerrada correctamente"
+    });
+  } catch (error) {
     return next(error);
   }
 };
