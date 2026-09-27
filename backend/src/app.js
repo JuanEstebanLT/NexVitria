@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -24,9 +25,12 @@ app.disable("x-powered-by");
 app.use(helmet());
 
 // Orígenes permitidos
-const allowedOrigins = [
-  "http://localhost:5173"
-];
+const allowedOrigins = (
+  process.env.FRONTEND_ORIGINS || "http://localhost:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 // Configuración de CORS
 app.use(
