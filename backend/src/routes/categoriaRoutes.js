@@ -47,7 +47,17 @@ router.put(
   editarCategoria
 );
 
-// Eliminar una categoría
+router.patch(
+  "/:id",
+  authMiddleware,
+  requireRole(
+    ROLES.EMPLEADO,
+    ROLES.ADMINISTRADOR
+  ),
+  editarCategoria
+);
+
+// Desactivar una categoría
 router.delete(
   "/:id",
   authMiddleware,
