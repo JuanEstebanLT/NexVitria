@@ -5,7 +5,9 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "catalog:sync": "node scripts/syncCatalog.js",
+    "catalog:images:normalized": "node scripts/uploadNormalizedProductImages.js"
   },
   "keywords": [],
   "author": "Juan Esteban Lezcano Tejada",
