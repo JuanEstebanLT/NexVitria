@@ -5,6 +5,7 @@ export const obtenerCategorias = async () => {
   const { data, error } = await supabase
     .from("categorias")
     .select("*")
+    .eq("activo", true)
     .order("nombre", { ascending: true });
 
   if (error) {
@@ -20,6 +21,7 @@ export const obtenerCategoriaPorId = async (id) => {
     .from("categorias")
     .select("*")
     .eq("id", id)
+    .eq("activo", true)
     .maybeSingle();
 
   if (error) {
@@ -79,12 +81,13 @@ export const actualizarCategoria = async (id, categoria) => {
   return data;
 };
 
-// Eliminar una categoría
+// Desactivar lógicamente una categoría
 export const eliminarCategoria = async (id) => {
   const { data, error } = await supabase
     .from("categorias")
-    .delete()
+    .update({ activo: false })
     .eq("id", id)
+    .eq("activo", true)
     .select()
     .maybeSingle();
 

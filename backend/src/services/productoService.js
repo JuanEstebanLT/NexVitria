@@ -1,4 +1,73 @@
+import { randomUUID } from "node:crypto";
 import supabase from "../config/supabase.js";
+
+const PRODUCT_IMAGE_BUCKET = "product-images";
+
+const obtenerRutaControlada = (imagenUrl, productoId) => {
+  if (!imagenUrl) return null;
+
+  const marcador = "__ruta_producto__";
+  const { data } = supabase.storage
+    .from(PRODUCT_IMAGE_BUCKET)
+    .getPublicUrl(marcador);
+  const publicUrl = data?.publicUrl;
+
+  if (!publicUrl?.endsWith(marcador)) return null;
+
+  const prefijo = publicUrl.slice(0, -marcador.length);
+
+  try {
+    const url = new URL(imagenUrl);
+    url.search = "";
+    url.hash = "";
+    const urlLimpia = url.toString();
+
+    if (!urlLimpia.startsWith(prefijo)) return null;
+
+    const ruta = decodeURIComponent(urlLimpia.slice(prefijo.length));
+    const patronRuta = new RegExp(
+      `^${productoId}/principal-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(jpg|png)$`,
+      "i"
+    );
+
+    return patronRuta.test(ruta) ? ruta : null;
+  } catch {
+    return null;
+  }
+};
+
+const actualizarUrlImagen = async (productoId, imagenUrl) => {
+  const { data, error } = await supabase
+    .from("productos")
+    .update({ imagen_url: imagenUrl })
+    .eq("id", productoId)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+};
+
+const eliminarObjetoSinOcultarError = async (ruta) => {
+  const { error } = await supabase.storage
+    .from(PRODUCT_IMAGE_BUCKET)
+    .remove([ruta]);
+
+  if (error) {
+    throw error;
+  }
+};
+
+const intentarEliminarObjeto = async (ruta) => {
+  try {
+    await eliminarObjetoSinOcultarError(ruta);
+  } catch (error) {
+    console.error("No fue posible limpiar la imagen del producto:", error);
+  }
+};
 
 // Obtener todos los productos
 export const obtenerProductos = async () => {
@@ -6,11 +75,13 @@ export const obtenerProductos = async () => {
     .from("productos")
     .select(`
       *,
-      categoria:categorias (
+      categoria:categorias!inner (
         id,
         nombre
       )
     `)
+    .eq("activo", true)
+    .eq("categoria.activo", true)
     .order("nombre", { ascending: true });
 
   if (error) {
@@ -26,11 +97,28 @@ export const obtenerProductoPorId = async (id) => {
     .from("productos")
     .select(`
       *,
-      categoria:categorias (
+      categoria:categorias!inner (
         id,
         nombre
       )
     `)
+    .eq("id", id)
+    .eq("activo", true)
+    .eq("categoria.activo", true)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+};
+
+// Obtener un producto existente, incluso si está inactivo, para gestionar su imagen
+export const obtenerProductoParaImagen = async (id) => {
+  const { data, error } = await supabase
+    .from("productos")
+    .select("*")
     .eq("id", id)
     .maybeSingle();
 
@@ -124,12 +212,13 @@ export const actualizarProducto = async (id, producto) => {
   return data;
 };
 
-// Eliminar un producto
+// Desactivar lógicamente un producto
 export const eliminarProducto = async (id) => {
   const { data, error } = await supabase
     .from("productos")
-    .delete()
+    .update({ activo: false })
     .eq("id", id)
+    .eq("activo", true)
     .select()
     .maybeSingle();
 
@@ -138,4 +227,100 @@ export const eliminarProducto = async (id) => {
   }
 
   return data;
+};
+
+// Guardar una imagen pública y persistir su URL en el producto
+export const guardarImagenProducto = async ({
+  producto,
+  buffer,
+  contentType,
+  extension
+}) => {
+  const nuevaRuta = `${producto.id}/principal-${randomUUID()}.${extension}`;
+  const rutaAnterior = obtenerRutaControlada(
+    producto.imagen_url,
+    producto.id
+  );
+
+  const { error: uploadError } = await supabase.storage
+    .from(PRODUCT_IMAGE_BUCKET)
+    .upload(nuevaRuta, buffer, {
+      contentType,
+      cacheControl: "3600",
+      upsert: false
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from(PRODUCT_IMAGE_BUCKET)
+    .getPublicUrl(nuevaRuta);
+  const nuevaUrl = publicUrlData?.publicUrl;
+
+  if (!nuevaUrl) {
+    await intentarEliminarObjeto(nuevaRuta);
+    throw new Error("No fue posible obtener la URL pública de la imagen");
+  }
+
+  let productoActualizado;
+
+  try {
+    productoActualizado = await actualizarUrlImagen(producto.id, nuevaUrl);
+  } catch (error) {
+    await intentarEliminarObjeto(nuevaRuta);
+    throw error;
+  }
+
+  if (rutaAnterior && rutaAnterior !== nuevaRuta) {
+    try {
+      await eliminarObjetoSinOcultarError(rutaAnterior);
+    } catch (error) {
+      let rollbackExitoso = false;
+
+      try {
+        await actualizarUrlImagen(producto.id, producto.imagen_url);
+        rollbackExitoso = true;
+      } catch (rollbackError) {
+        console.error(
+          "No fue posible revertir la URL de imagen del producto:",
+          rollbackError
+        );
+      }
+
+      if (rollbackExitoso) {
+        await intentarEliminarObjeto(nuevaRuta);
+      }
+
+      throw error;
+    }
+  }
+
+  return productoActualizado;
+};
+
+// Quitar la URL del producto y borrar el objeto si pertenece a la aplicación
+export const eliminarImagenProducto = async (producto) => {
+  const ruta = obtenerRutaControlada(producto.imagen_url, producto.id);
+  const productoActualizado = await actualizarUrlImagen(producto.id, null);
+
+  if (ruta) {
+    try {
+      await eliminarObjetoSinOcultarError(ruta);
+    } catch (error) {
+      try {
+        await actualizarUrlImagen(producto.id, producto.imagen_url);
+      } catch (rollbackError) {
+        console.error(
+          "No fue posible revertir la eliminación de imagen del producto:",
+          rollbackError
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  return productoActualizado;
 };
