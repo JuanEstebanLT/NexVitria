@@ -92,7 +92,7 @@
 
 .hero-carousel {
   position: relative;
-  min-height: 31rem;
+  min-height: clamp(31rem, 70vw, 34rem);
   overflow: hidden;
   border: 1px solid rgb(255 255 255 / 9%);
   border-radius: 1.5rem;
@@ -139,14 +139,21 @@
   box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 14%);
 }
 
-.hero-carousel__viewport,
-.hero-carousel__slide {
-  position: absolute;
-  inset: 0;
+.hero-carousel__viewport {
+  position: relative;
+  display: grid;
+  min-height: inherit;
 }
 
 .hero-carousel__slide {
+  position: relative;
+  grid-area: 1 / 1;
   display: grid;
+  grid-template-rows: auto auto;
+  align-content: start;
+  gap: var(--spacing-4);
+  min-width: 0;
+  min-height: inherit;
   padding: var(--spacing-8) var(--spacing-6) 5.75rem;
   opacity: 0;
   visibility: hidden;
@@ -206,26 +213,29 @@
 }
 
 .hero-carousel__copy h2 {
-  max-width: 17rem;
+  max-width: min(100%, 30rem);
   color: var(--color-surface);
   font-size: clamp(1.2rem, 4vw, 1.65rem);
   line-height: 1.25;
 }
 
 .hero-carousel__copy p {
-  max-width: 17rem;
+  max-width: min(100%, 30rem);
   color: rgb(255 255 255 / 68%);
   font-size: var(--font-size-sm);
   line-height: 1.6;
 }
 
 .carousel-product-visual {
-  position: absolute;
+  position: relative;
   z-index: 2;
-  inset: 10.75rem var(--spacing-6) 5.5rem;
   display: grid;
+  width: min(100%, clamp(20rem, 85vw, 24rem));
+  height: auto;
+  aspect-ratio: 1 / 1;
   overflow: hidden;
   place-items: center;
+  justify-self: center;
   padding: 0.45rem;
   border: 1px solid rgb(255 255 255 / 20%);
   border-radius: 1rem;
@@ -1019,12 +1029,19 @@
     gap: 0;
   }
 
+  .carousel-control {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
   .carousel-dots {
     gap: 0;
+    padding-inline: 0;
   }
 
   .carousel-dot {
-    width: 2.5rem;
+    width: 2.25rem;
+    height: 2.5rem;
   }
 
   .product-card__footer .ui-button {
@@ -1037,10 +1054,6 @@
     padding-inline: var(--spacing-8);
   }
 
-  .carousel-product-visual {
-    inset-inline: var(--spacing-8);
-  }
-
   .benefits-grid,
   .solutions-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1050,10 +1063,6 @@
 @media (min-width: 48rem) {
   .hero {
     padding-block: 6rem 6.5rem;
-  }
-
-  .hero-carousel {
-    min-height: 34rem;
   }
 
   .hero-carousel__copy p {
@@ -1086,17 +1095,36 @@
     min-height: 35rem;
   }
 
+  .hero-carousel__viewport,
+  .hero-carousel__slide {
+    position: absolute;
+    inset: 0;
+  }
+
+  .hero-carousel__slide {
+    display: grid;
+    gap: 0;
+    min-height: 0;
+  }
+
   .hero-carousel__copy {
     max-width: 46%;
     margin-top: 5rem;
   }
 
+  .hero-carousel__copy h2,
+  .hero-carousel__copy p {
+    max-width: 17rem;
+  }
+
   .carousel-product-visual {
+    position: absolute;
     top: 50%;
     right: 1.75rem;
     bottom: auto;
     left: auto;
     width: 48%;
+    height: auto;
     aspect-ratio: 1;
     padding: 0.6rem;
     transform: translateY(-47%);
