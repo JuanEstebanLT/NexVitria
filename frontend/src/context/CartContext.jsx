@@ -143,6 +143,7 @@ function CartStateProvider({
 
   const clearCart = () => {
     if (!clientId) return
+    persistCart(clientId, [])
     setItems([])
   }
 

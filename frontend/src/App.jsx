@@ -14,6 +14,7 @@ import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 import CartPage from './pages/CartPage.jsx'
 import AccountPage from './pages/AccountPage.jsx'
+import OrderDetailPage from './pages/OrderDetailPage.jsx'
 import './App.css'
 
 function AuthenticatedRoute({ children }) {
@@ -37,7 +38,11 @@ function AuthenticatedRoute({ children }) {
   return children
 }
 
-function ClientRoute({ children }) {
+function ClientRoute({
+  children,
+  title = 'Carrito no disponible',
+  description = 'El carrito está disponible exclusivamente para cuentas con rol CLIENTE.',
+}) {
   const { user, isAuthenticated, isLoading } = useAuth()
   const location = useLocation()
 
@@ -58,10 +63,10 @@ function ClientRoute({ children }) {
   if (user?.activo !== true || user?.rol !== 'CLIENTE') {
     return (
       <main className="route-access-state">
-        <section aria-labelledby="cart-access-title">
+        <section aria-labelledby="client-access-title">
           <p className="section-eyebrow">Acceso de clientes</p>
-          <h1 id="cart-access-title">Carrito no disponible</h1>
-          <p>El carrito está disponible exclusivamente para cuentas con rol CLIENTE.</p>
+          <h1 id="client-access-title">{title}</h1>
+          <p>{description}</p>
           <Link className="ui-button ui-button--primary" to="/">Volver al inicio</Link>
         </section>
       </main>
@@ -73,7 +78,7 @@ function ClientRoute({ children }) {
 
 function AppRoutes() {
   const { pathname } = useLocation()
-  const pageClassName = pathname.startsWith('/productos') || pathname === '/carrito' || pathname === '/mi-cuenta'
+  const pageClassName = pathname.startsWith('/productos') || pathname === '/carrito' || pathname.startsWith('/mi-cuenta')
     ? 'app-shell app-shell--catalog'
     : pathname === '/login' || pathname === '/registro'
       ? 'app-shell app-shell--auth'
@@ -91,6 +96,17 @@ function AppRoutes() {
         <Route path="/registro" element={<RegisterPage />} />
         <Route path="/carrito" element={<ClientRoute><CartPage /></ClientRoute>} />
         <Route path="/mi-cuenta" element={<AuthenticatedRoute><AccountPage /></AuthenticatedRoute>} />
+        <Route
+          path="/mi-cuenta/pedidos/:codigo"
+          element={(
+            <ClientRoute
+              title="Pedido no disponible"
+              description="Los pedidos están disponibles exclusivamente para cuentas CLIENTE."
+            >
+              <OrderDetailPage />
+            </ClientRoute>
+          )}
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Footer />
