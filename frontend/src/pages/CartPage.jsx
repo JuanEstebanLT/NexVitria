@@ -1,16 +1,109 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useRef, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import ProductImage from '../components/products/ProductImage.jsx'
 import Button from '../components/ui/Button.jsx'
+import { useAuth } from '../context/authContext.js'
 import { useCart } from '../context/cartContext.js'
+import { useCatalog } from '../context/catalogContext.js'
+import { ApiError } from '../services/apiClient.js'
+import { crearPedido } from '../services/orderService.js'
 import { formatProductPrice } from '../utils/formatters.js'
 import '../components/cart/cart.css'
 
+const MAX_OBSERVATIONS_LENGTH = 500
+
+function getOrderErrorMessage(error) {
+  if (!(error instanceof ApiError)) {
+    return 'No fue posible confirmar el pedido. Intenta nuevamente.'
+  }
+
+  if (error.status === 401) {
+    return 'Tu sesión ya no es válida o ha expirado. Inicia sesión nuevamente.'
+  }
+
+  if (error.status === 403) {
+    return error.message || 'Tu cuenta no tiene permiso para confirmar pedidos.'
+  }
+
+  if (error.status === 400 || error.status === 409 || error.status === 0) {
+    return error.message
+  }
+
+  return 'No fue posible confirmar el pedido. Conservamos tu carrito para que puedas intentarlo nuevamente.'
+}
+
+function isCreatedOrder(value) {
+  return Boolean(
+    value &&
+    typeof value.id === 'string' &&
+    typeof value.codigoPedido === 'string' &&
+    typeof value.estado === 'string' &&
+    Number.isFinite(value.total) &&
+    Array.isArray(value.detalles),
+  )
+}
+
+function OrderConfirmation({ order }) {
+  const totalUnits = order.detalles.reduce(
+    (total, detail) => total + detail.cantidad,
+    0,
+  )
+
+  return (
+    <main className="cart-page">
+      <section
+        className="order-confirmation section-shell"
+        role="status"
+        aria-live="polite"
+        aria-labelledby="order-confirmation-title"
+      >
+        <span className="order-confirmation__icon" aria-hidden="true">✓</span>
+        <p className="section-eyebrow">Solicitud registrada</p>
+        <h1 id="order-confirmation-title">Pedido confirmado</h1>
+        <p className="order-confirmation__intro">
+          Tu pedido fue registrado correctamente y quedó pendiente de los siguientes pasos.
+        </p>
+
+        <dl className="order-confirmation__details">
+          <div>
+            <dt>Estado</dt>
+            <dd>{order.estado}</dd>
+          </div>
+          <div>
+            <dt>Total confirmado</dt>
+            <dd>{formatProductPrice(order.total)}</dd>
+          </div>
+          <div>
+            <dt>Unidades</dt>
+            <dd>{totalUnits}</dd>
+          </div>
+          <div className="order-confirmation__reference">
+            <dt>Referencia del pedido</dt>
+            <dd>{order.codigoPedido}</dd>
+          </div>
+        </dl>
+
+        <div className="order-confirmation__actions">
+          <Link className="ui-button ui-button--accent" to="/mi-cuenta#pedidos">
+            Ver mis pedidos
+          </Link>
+          <Link className="ui-button ui-button--secondary" to="/productos">
+            Seguir explorando
+          </Link>
+        </div>
+      </section>
+    </main>
+  )
+}
+
 function CartPage() {
+  const { token } = useAuth()
+  const { retryProducts } = useCatalog()
   const {
     items,
     removeItem,
     updateQuantity,
+    clearCart,
     totalItems,
     subtotal,
     getProductQuantityLimit,
@@ -18,7 +111,69 @@ function CartPage() {
     cartError,
     retryCart,
   } = useCart()
-  const [feedback, setFeedback] = useState('')
+  const location = useLocation()
+  const navigate = useNavigate()
+  const routeOrder = isCreatedOrder(location.state?.createdOrder)
+    ? location.state.createdOrder
+    : null
+  const routeError = typeof location.state?.orderError === 'string'
+    ? location.state.orderError
+    : ''
+  const [observations, setObservations] = useState('')
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
+  const [createdOrder, setCreatedOrder] = useState(routeOrder)
+  const [orderError, setOrderError] = useState(routeError)
+  const submissionInFlight = useRef(false)
+
+  const replaceCartState = (state) => {
+    navigate('/carrito', { replace: true, state })
+  }
+
+  const handleCreateOrder = async () => {
+    if (submissionInFlight.current || isSubmittingOrder) return
+
+    setOrderError('')
+    replaceCartState(null)
+
+    if (!token) {
+      setOrderError('Tu sesión ya no es válida o ha expirado. Inicia sesión nuevamente.')
+      return
+    }
+
+    submissionInFlight.current = true
+    setIsSubmittingOrder(true)
+
+    try {
+      const order = await crearPedido(token, {
+        items: items.map(({ product, quantity }) => ({
+          producto_id: product.id,
+          cantidad: quantity,
+        })),
+        observaciones: observations.trim() || null,
+      })
+
+      setCreatedOrder(order)
+      replaceCartState({ createdOrder: order })
+      clearCart()
+      retryProducts()
+    } catch (error) {
+      const message = getOrderErrorMessage(error)
+
+      setOrderError(message)
+      replaceCartState({ orderError: message })
+
+      if (error instanceof ApiError && error.status === 409) {
+        retryProducts()
+      }
+    } finally {
+      submissionInFlight.current = false
+      setIsSubmittingOrder(false)
+    }
+  }
+
+  if (createdOrder) {
+    return <OrderConfirmation order={createdOrder} />
+  }
 
   if (isCartLoading) {
     return (
@@ -96,12 +251,12 @@ function CartPage() {
                     <div className="cart-item__controls">
                       <div className="quantity-selector" role="group" aria-label={`Cantidad de ${product.name}`}>
                         <div className="quantity-selector__controls">
-                          <button type="button" aria-label={`Disminuir cantidad de ${product.name}`} disabled={quantity === 1} onClick={() => updateQuantity(product.id, quantity - 1)}>−</button>
+                          <button type="button" aria-label={`Disminuir cantidad de ${product.name}`} disabled={isSubmittingOrder || quantity === 1} onClick={() => updateQuantity(product.id, quantity - 1)}>−</button>
                           <output aria-live="polite" aria-label={`Cantidad: ${quantity}`}>{quantity}</output>
-                          <button type="button" aria-label={`Aumentar cantidad de ${product.name}`} disabled={quantity >= quantityLimit} onClick={() => updateQuantity(product.id, quantity + 1)}>+</button>
+                          <button type="button" aria-label={`Aumentar cantidad de ${product.name}`} disabled={isSubmittingOrder || quantity >= quantityLimit} onClick={() => updateQuantity(product.id, quantity + 1)}>+</button>
                         </div>
                       </div>
-                      <button className="cart-item__remove" type="button" onClick={() => removeItem(product.id)}>
+                      <button className="cart-item__remove" type="button" disabled={isSubmittingOrder} onClick={() => removeItem(product.id)}>
                         Eliminar
                       </button>
                     </div>
@@ -119,16 +274,42 @@ function CartPage() {
             <h2 id="cart-summary-title">Resumen</h2>
             <dl>
               <div><dt>Unidades</dt><dd>{totalItems}</dd></div>
-              <div className="cart-summary__total"><dt>Subtotal</dt><dd>{formatProductPrice(subtotal)}</dd></div>
+              <div className="cart-summary__total"><dt>Subtotal de referencia</dt><dd>{formatProductPrice(subtotal)}</dd></div>
             </dl>
+
+            <div className="cart-summary__observations">
+              <label htmlFor="order-observations">Observaciones del pedido</label>
+              <textarea
+                id="order-observations"
+                value={observations}
+                maxLength={MAX_OBSERVATIONS_LENGTH}
+                rows="4"
+                placeholder="Entrega, indicaciones u otra información opcional…"
+                disabled={isSubmittingOrder}
+                onChange={(event) => setObservations(event.target.value)}
+              />
+              <span className="cart-summary__counter">
+                {observations.length} / {MAX_OBSERVATIONS_LENGTH}
+              </span>
+            </div>
+
             <p>
-              El precio mostrado es informativo. Al implementar pedidos, el backend
-              volverá a validar precio y stock desde la base de datos.
+              El precio y la disponibilidad se validarán nuevamente al confirmar el pedido.
             </p>
-            <Button variant="accent" onClick={() => setFeedback('El proceso de compra se implementará próximamente.')}>
-              Continuar compra
+            <Button
+              className="cart-summary__submit"
+              variant="accent"
+              disabled={isSubmittingOrder}
+              aria-busy={isSubmittingOrder}
+              onClick={handleCreateOrder}
+            >
+              {isSubmittingOrder ? 'Confirmando pedido…' : 'Confirmar pedido'}
             </Button>
-            {feedback && <p className="cart-summary__feedback" role="status" aria-live="polite">{feedback}</p>}
+            {orderError && (
+              <p className="cart-summary__error" role="alert">
+                {orderError}
+              </p>
+            )}
           </aside>
         </div>
       </div>

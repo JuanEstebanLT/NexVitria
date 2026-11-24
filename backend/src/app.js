@@ -6,6 +6,7 @@ import helmet from "helmet";
 import authRoutes from "./routes/authRoutes.js";
 import categoriaRoutes from "./routes/categoriaRoutes.js";
 import productoRoutes from "./routes/productoRoutes.js";
+import pedidoRoutes from "./routes/pedidoRoutes.js";
 
 import {
   notFoundMiddleware,
@@ -95,6 +96,9 @@ app.use("/api/categorias", categoriaRoutes);
 
 // Productos
 app.use("/api/productos", productoRoutes);
+
+// Pedidos
+app.use("/api/pedidos", pedidoRoutes);
 
 // =====================================================
 // MANEJO DE ERRORES

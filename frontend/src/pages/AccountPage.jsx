@@ -3,6 +3,9 @@ import { Link, useLocation } from 'react-router-dom'
 import UserAvatar from '../components/account/UserAvatar.jsx'
 import { useAuth } from '../context/authContext.js'
 import { usePresence } from '../context/presenceContext.js'
+import { ApiError } from '../services/apiClient.js'
+import { obtenerPedidos } from '../services/orderService.js'
+import { formatOrderDate, formatProductPrice } from '../utils/formatters.js'
 import '../components/account/account.css'
 
 const ROLE_LABELS = {
@@ -117,8 +120,209 @@ function OrdersIllustration() {
   )
 }
 
+function getOrdersErrorMessage(error) {
+  if (!(error instanceof ApiError)) {
+    return 'No fue posible consultar el historial en este momento.'
+  }
+
+  if (error.status > 0 && error.status < 500) {
+    return error.message
+  }
+
+  return 'No fue posible consultar el historial en este momento.'
+}
+
+function OrderCard({ order, isExpanded, onToggle }) {
+  const detailsId = `order-details-${order.codigoPedido}`
+  const orderDate = formatOrderDate(order.createdAt)
+  const distinctProducts = order.detalles.length
+  const totalUnits = order.detalles.reduce(
+    (total, detail) => total + detail.cantidad,
+    0,
+  )
+  const observations = typeof order.observaciones === 'string'
+    ? order.observaciones.trim()
+    : ''
+
+  return (
+    <article className="account-order-card">
+      <header className="account-order-card__header">
+        <div className="account-order-card__identity">
+          <p>Pedido</p>
+          <h3>{order.codigoPedido}</h3>
+        </div>
+        <span className="account-order-card__status">{order.estado}</span>
+      </header>
+
+      <div className="account-order-card__meta">
+        {orderDate.dateTime ? (
+          <time dateTime={orderDate.dateTime}>{orderDate.label}</time>
+        ) : (
+          <span>{orderDate.label}</span>
+        )}
+        <span aria-hidden="true">·</span>
+        <span>
+          {distinctProducts} {distinctProducts === 1 ? 'producto' : 'productos'}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>{totalUnits} {totalUnits === 1 ? 'unidad' : 'unidades'}</span>
+      </div>
+
+      {observations && (
+        <div className="account-order-card__observations">
+          <h4>Observaciones</h4>
+          <p>{observations}</p>
+        </div>
+      )}
+
+      <div className="account-order-card__footer">
+        <div className="account-order-card__total">
+          <span>Total histórico</span>
+          <strong>{formatProductPrice(order.total)}</strong>
+        </div>
+        <div className="account-order-card__actions">
+          <button
+            className="account-order-card__toggle"
+            type="button"
+            aria-expanded={isExpanded}
+            aria-controls={detailsId}
+            onClick={() => onToggle(order.codigoPedido)}
+          >
+            {isExpanded ? 'Ocultar productos' : 'Ver productos'}
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+              <path d="m5 7.5 5 5 5-5" />
+            </svg>
+          </button>
+          <Link
+            className="account-order-card__detail-link"
+            to={`/mi-cuenta/pedidos/${encodeURIComponent(order.codigoPedido)}`}
+          >
+            Ver detalle
+          </Link>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="account-order-card__products" id={detailsId}>
+          <h4>Productos del pedido</h4>
+          {order.detalles.length > 0 ? (
+            <ul>
+              {order.detalles.map((detail) => (
+                <li key={detail.id}>
+                  <div>
+                    <h5>{detail.nombreProducto}</h5>
+                    <p>
+                      {detail.cantidad} × {formatProductPrice(detail.precioUnitario)}
+                    </p>
+                  </div>
+                  <strong>{formatProductPrice(detail.subtotal)}</strong>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="account-order-card__products-empty">
+              No hay detalles disponibles para este pedido.
+            </p>
+          )}
+        </div>
+      )}
+    </article>
+  )
+}
+
+function OrdersSection({
+  orders,
+  status,
+  error,
+  expandedOrderCodes,
+  onRetry,
+  onToggle,
+}) {
+  const hasOrders = status === 'success' && orders.length > 0
+
+  return (
+    <section
+      className={`account-orders${hasOrders ? ' account-orders--history' : ''}`}
+      id="pedidos"
+      aria-labelledby="orders-title"
+      aria-busy={status === 'idle' || status === 'loading'}
+    >
+      <div className="account-orders__content">
+        <div className="account-orders__heading">
+          <span aria-hidden="true">02</span>
+          <div>
+            <p className="section-eyebrow">Actividad</p>
+            <h2 id="orders-title">Mis pedidos</h2>
+          </div>
+        </div>
+
+        {(status === 'idle' || status === 'loading') && (
+          <div className="account-orders__state" aria-live="polite">
+            <span className="account-orders__state-mark" aria-hidden="true">···</span>
+            <div>
+              <h3>Estamos cargando tus pedidos.</h3>
+              <p>Consultando tu historial de compras en NexVitria.</p>
+            </div>
+          </div>
+        )}
+
+        {status === 'error' && (
+          <div className="account-orders__state account-orders__state--error" role="alert">
+            <span className="account-orders__state-mark" aria-hidden="true">!</span>
+            <div>
+              <h3>No pudimos cargar tus pedidos.</h3>
+              <p>{error}</p>
+              <button className="account-orders__retry" type="button" onClick={onRetry}>
+                Reintentar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {status === 'success' && orders.length === 0 && (
+          <>
+            <div className="account-orders__copy">
+              <h3>Aún no tienes pedidos.</h3>
+              <p>Cuando realices una compra, podrás consultar aquí el estado y el historial de tus pedidos.</p>
+            </div>
+            <Link className="ui-button ui-button--primary account-orders__action" to="/productos">
+              Explorar productos
+            </Link>
+          </>
+        )}
+
+        {hasOrders && (
+          <>
+            <p className="account-orders__intro">
+              Consulta el estado, total y productos registrados en cada pedido.
+            </p>
+            <div className="account-orders__list" role="list">
+              {orders.map((order) => (
+                <div key={order.codigoPedido} role="listitem">
+                  <OrderCard
+                    order={order}
+                    isExpanded={expandedOrderCodes.has(order.codigoPedido)}
+                    onToggle={onToggle}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {!hasOrders && (
+        <div className="account-orders__visual">
+          <span className="account-orders__visual-label">NexVitria</span>
+          <OrdersIllustration />
+        </div>
+      )}
+    </section>
+  )
+}
+
 function AccountPage() {
-  const { user, uploadAvatar, removeAvatar, updateProfile } = useAuth()
+  const { user, token, uploadAvatar, removeAvatar, updateProfile } = useAuth()
   const { status, statusLabel } = usePresence()
   const { hash } = useLocation()
   const avatarInputRef = useRef(null)
@@ -131,6 +335,13 @@ function AccountPage() {
   const [personalForm, setPersonalForm] = useState(() => createPersonalForm(user))
   const [personalErrors, setPersonalErrors] = useState({})
   const [personalFeedback, setPersonalFeedback] = useState(null)
+  const [ordersState, setOrdersState] = useState({
+    data: [],
+    status: 'idle',
+    error: null,
+  })
+  const [ordersRequest, setOrdersRequest] = useState(0)
+  const [expandedOrderCodes, setExpandedOrderCodes] = useState(() => new Set())
   const firstName = cleanValue(user?.nombre)
   const lastName = cleanValue(user?.apellido)
   const fullNameParts = [user?.nombre, user?.apellido]
@@ -143,6 +354,7 @@ function AccountPage() {
   const isClient = user?.rol === 'CLIENTE'
   const hasAvatar = Boolean(user?.avatar_path)
   const avatarIsBusy = isUploadingAvatar || isRemovingAvatar
+  const canLoadOrders = Boolean(token && isClient && isAccountActive)
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl)
@@ -161,6 +373,55 @@ function AccountPage() {
 
     return () => window.cancelAnimationFrame(frame)
   }, [hash, isClient])
+
+  useEffect(() => {
+    if (!canLoadOrders) return undefined
+
+    const controller = new AbortController()
+
+    obtenerPedidos(token, { signal: controller.signal })
+      .then((orders) => {
+        if (controller.signal.aborted) return
+        setOrdersState({
+          data: orders,
+          status: 'success',
+          error: null,
+        })
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || error?.name === 'AbortError') return
+        setOrdersState({
+          data: [],
+          status: 'error',
+          error: getOrdersErrorMessage(error),
+        })
+      })
+
+    return () => controller.abort()
+  }, [canLoadOrders, ordersRequest, token])
+
+  const handleOrdersRetry = () => {
+    setOrdersState({
+      data: [],
+      status: 'loading',
+      error: null,
+    })
+    setOrdersRequest((current) => current + 1)
+  }
+
+  const handleOrderToggle = (orderCode) => {
+    setExpandedOrderCodes((current) => {
+      const next = new Set(current)
+
+      if (next.has(orderCode)) {
+        next.delete(orderCode)
+      } else {
+        next.add(orderCode)
+      }
+
+      return next
+    })
+  }
 
   const handleAvatarSelection = async (event) => {
     const file = event.target.files?.[0]
@@ -553,27 +814,14 @@ function AccountPage() {
         </div>
 
         {isClient && (
-          <section className="account-orders" id="pedidos" aria-labelledby="orders-title">
-            <div className="account-orders__content">
-              <div className="account-orders__heading">
-                <span aria-hidden="true">02</span>
-                <div>
-                  <p className="section-eyebrow">Actividad</p>
-                  <h2 id="orders-title">Mis pedidos</h2>
-                </div>
-              </div>
-              <div className="account-orders__copy">
-                <h3>Aún no tienes pedidos.</h3>
-                <p>Cuando realices una compra, podrás consultar aquí el estado y el historial de tus pedidos.</p>
-              </div>
-              <Link className="ui-button ui-button--primary account-orders__action" to="/productos">Explorar productos</Link>
-            </div>
-
-            <div className="account-orders__visual">
-              <span className="account-orders__visual-label">NexVitria</span>
-              <OrdersIllustration />
-            </div>
-          </section>
+          <OrdersSection
+            orders={ordersState.data}
+            status={ordersState.status}
+            error={ordersState.error}
+            expandedOrderCodes={expandedOrderCodes}
+            onRetry={handleOrdersRetry}
+            onToggle={handleOrderToggle}
+          />
         )}
       </div>
     </main>
