@@ -131,8 +131,8 @@ function ProductsPage() {
             <img
               src={brandPanel}
               alt="NexVitria, naturaleza que te acompaña"
-              width="768"
-              height="1024"
+              width="256"
+              height="341"
             />
           </div>
         </div>
