@@ -47,6 +47,7 @@ function UserMenu({ className = '', onNavigate, onOpen }) {
   const displayName = typeof user?.nombre === 'string' ? user.nombre.trim() : ''
   const email = typeof user?.email === 'string' ? user.email : ''
   const isClient = user?.rol === 'CLIENTE'
+  const isAdministrator = user?.rol === 'ADMINISTRADOR'
 
   const closeMenu = () => {
     setIsOpen(false)
@@ -186,6 +187,11 @@ function UserMenu({ className = '', onNavigate, onOpen }) {
           {isClient && (
             <Link className="user-menu__link" to="/mi-cuenta#pedidos" role="menuitem" onClick={handleNavigation}>
               Mis pedidos
+            </Link>
+          )}
+          {isAdministrator && (
+            <Link className="user-menu__link" to="/admin" role="menuitem" onClick={handleNavigation}>
+              Panel administrativo
             </Link>
           )}
 

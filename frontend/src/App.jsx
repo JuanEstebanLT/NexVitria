@@ -15,6 +15,7 @@ import RegisterPage from './pages/RegisterPage.jsx'
 import CartPage from './pages/CartPage.jsx'
 import AccountPage from './pages/AccountPage.jsx'
 import OrderDetailPage from './pages/OrderDetailPage.jsx'
+import AdminPage from './pages/AdminPage.jsx'
 import './App.css'
 
 function AuthenticatedRoute({ children }) {
@@ -76,9 +77,43 @@ function ClientRoute({
   return children
 }
 
+function AdminRoute({ children }) {
+  const { user, isAuthenticated, isLoading } = useAuth()
+  const location = useLocation()
+
+  if (isLoading) {
+    return (
+      <main className="route-loading" aria-live="polite">
+        <span className="route-loading__indicator" aria-hidden="true" />
+        <p>Validando tu sesión…</p>
+      </main>
+    )
+  }
+
+  if (!isAuthenticated) {
+    const redirect = encodeURIComponent(`${location.pathname}${location.search}`)
+    return <Navigate to={`/login?redirect=${redirect}`} replace />
+  }
+
+  if (user?.activo !== true || user?.rol !== 'ADMINISTRADOR') {
+    return (
+      <main className="route-access-state">
+        <section aria-labelledby="admin-access-title">
+          <p className="section-eyebrow">Acceso administrativo</p>
+          <h1 id="admin-access-title">Panel no disponible</h1>
+          <p>Esta sección está disponible exclusivamente para cuentas ADMINISTRADOR activas.</p>
+          <Link className="ui-button ui-button--primary" to="/">Volver al inicio</Link>
+        </section>
+      </main>
+    )
+  }
+
+  return children
+}
+
 function AppRoutes() {
   const { pathname } = useLocation()
-  const pageClassName = pathname.startsWith('/productos') || pathname === '/carrito' || pathname.startsWith('/mi-cuenta')
+  const pageClassName = pathname.startsWith('/productos') || pathname === '/carrito' || pathname.startsWith('/mi-cuenta') || pathname.startsWith('/admin')
     ? 'app-shell app-shell--catalog'
     : pathname === '/login' || pathname === '/registro'
       ? 'app-shell app-shell--auth'
@@ -96,6 +131,7 @@ function AppRoutes() {
         <Route path="/registro" element={<RegisterPage />} />
         <Route path="/carrito" element={<ClientRoute><CartPage /></ClientRoute>} />
         <Route path="/mi-cuenta" element={<AuthenticatedRoute><AccountPage /></AuthenticatedRoute>} />
+        <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
         <Route
           path="/mi-cuenta/pedidos/:codigo"
           element={(
