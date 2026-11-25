@@ -102,7 +102,7 @@ function normalizeOrderDetail(detail) {
   }
 }
 
-function normalizeOrder(order) {
+export function normalizeOrder(order) {
   const normalizedOrder = requireObject(order, 'pedido')
 
   if (!Array.isArray(normalizedOrder.detalles)) {

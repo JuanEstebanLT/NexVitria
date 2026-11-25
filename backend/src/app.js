@@ -7,6 +7,7 @@ import authRoutes from "./routes/authRoutes.js";
 import categoriaRoutes from "./routes/categoriaRoutes.js";
 import productoRoutes from "./routes/productoRoutes.js";
 import pedidoRoutes from "./routes/pedidoRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 import {
   notFoundMiddleware,
@@ -99,6 +100,9 @@ app.use("/api/productos", productoRoutes);
 
 // Pedidos
 app.use("/api/pedidos", pedidoRoutes);
+
+// Administración
+app.use("/api/admin", adminRoutes);
 
 // =====================================================
 // MANEJO DE ERRORES
